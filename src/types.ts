@@ -42,6 +42,7 @@ export interface CalendarEvent {
   allDay?: boolean;
   calendarId?: string;
   resourceId?: string;
+  zones?: string[];
   type?: string; // e.g. "meeting", "task", "holiday"
   icon?: string; // Lucide icon name or ReactNode if we can serialze
   /** Set to false to disable drag for this event. Default: true. */

@@ -3,14 +3,12 @@ import { useClassNames } from './customize';
 import { placeBeside } from './placement';
 import { useDialogFocus } from './useDialogFocus';
 import { CalendarEvent, CalendarTranslations, EventType, EventReminder, PlaceSearch } from '../types';
-import { PlaceField } from './PlaceField';
-import { addDays, differenceInCalendarDays, format, differenceInMinutes, startOfDay } from 'date-fns';
-import { AlignLeft, Bell, Calendar, Clock, MapPin, Plus, Trash2, Users, X } from './icons';
+import { addDays, format, startOfDay } from 'date-fns';
+import { Bell, Users, Calendar, Clock, Plus, Trash2, X } from './icons';
 import { eventColorStyle } from './eventColor';
 import { cx } from '../utils';
 import { DiscardPrompt } from './DiscardPrompt';
 import { interpolate } from '../core/format';
-import { dayEventSpan } from '../core/allDay';
 import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect';
 
 interface EventModalProps {
@@ -57,19 +55,6 @@ const COLOR_PALETTE = [
 
 export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Appends emails not already present, comparing case-insensitively and keeping the first spelling. */
-const mergeGuests = (current: string[], added: string[]): string[] => {
-  const seen = new Set(current.map(email => email.toLowerCase()));
-  const merged = [...current];
-  for (const email of added) {
-    if (!seen.has(email.toLowerCase())) {
-      seen.add(email.toLowerCase());
-      merged.push(email);
-    }
-  }
-  return merged;
-};
-
 /** Localized reminder label: "30 minutes before", "1 day before"… */
 export const reminderLabel = (minutes: number, t: CalendarTranslations): string => {
   if (minutes === 0) return t.reminderAtTime;
@@ -80,9 +65,6 @@ export const reminderLabel = (minutes: number, t: CalendarTranslations): string 
   if (minutes % 60 === 0) return interpolate(t.reminderHours, { n: minutes / 60 });
   return interpolate(t.reminderMinutes, { n: minutes });
 };
-
-/** Stable avatar hue derived from the email (no fake guest list needed). */
-const avatarHue = (email: string) => [...email].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 360, 7);
 
 const WIDTH = 440;
 const MARGIN = 8;
@@ -112,7 +94,6 @@ export const EventModal: React.FC<EventModalProps> = ({
   translations: t,
   initialAllDay,
   initialValues,
-  placeSearch,
   variant = 'card',
   onDirtyChange,
   closeRequest,
@@ -139,12 +120,11 @@ export const EventModal: React.FC<EventModalProps> = ({
     recurrence: undefined,
     attachments: [],
     reminders: [],
+    zones: []
   });
 
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const [isReminderDropdownOpen, setIsReminderDropdownOpen] = useState(false);
-  const [guestInput, setGuestInput] = useState('');
-  const [guestError, setGuestError] = useState(false);
   const id = useId();
   const classNames = useClassNames();
   const card = useRef<HTMLDivElement>(null);
@@ -152,8 +132,6 @@ export const EventModal: React.FC<EventModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setGuestInput('');
-      setGuestError(false);
       setConfirmingDiscard(false);
       // No made-up defaults (spec §8.5): no reminder, no colour (the calendar's colour applies).
       let opened: Partial<CalendarEvent>;
@@ -167,7 +145,7 @@ export const EventModal: React.FC<EventModalProps> = ({
           end: new Date(event.end),
           attachments: event.attachments || [],
           reminders: event.reminders || [],
-          guests: event.guests || [],
+          zones: event.zones || []
         };
       } else {
         setMode('create');
@@ -186,7 +164,7 @@ export const EventModal: React.FC<EventModalProps> = ({
           calendarId: calendars?.[0]?.id,
           attachments: [],
           reminders: [],
-          guests: [],
+          zones: []
         };
         opened = { ...pristine, ...initialValuesRef.current };
       }
@@ -233,40 +211,11 @@ export const EventModal: React.FC<EventModalProps> = ({
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen]);
 
-
-  const guests = formData.guests || [];
-
-  /** U2: guests are typed (or pasted as a list) freely; returns false if some entries are not valid emails. */
-  const addGuests = (raw: string): boolean => {
-    const entries = raw.split(/[\s,;]+/).filter(Boolean);
-    const valid = entries.filter(entry => EMAIL.test(entry));
-    const invalid = entries.filter(entry => !EMAIL.test(entry));
-    if (valid.length > 0) {
-      setFormData(prev => ({ ...prev, guests: mergeGuests(prev.guests || [], valid) }));
-    }
-    setGuestInput(invalid.join(', '));
-    setGuestError(invalid.length > 0);
-    return invalid.length === 0;
-  };
-
-  const removeGuest = (email: string) => {
-    setFormData(prev => ({ ...prev, guests: (prev.guests || []).filter(g => g !== email) }));
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Guests still typed in the input are added on save, unless some are not valid emails.
-    const pending = guestInput.split(/[\s,;]+/).filter(Boolean);
-    if (pending.some(entry => !EMAIL.test(entry))) {
-      addGuests(guestInput);
-      return;
-    }
-
-    const finalGuests = mergeGuests(guests, pending);
 
     onSave({
       ...formData,
-      guests: finalGuests,
       id: event?.id,
     });
     onClose();
@@ -284,41 +233,8 @@ export const EventModal: React.FC<EventModalProps> = ({
     return format(date, "yyyy-MM-dd'T'HH:mm");
   };
 
-  // All-day events edit days: the end field shows the last day *included* (the end is exclusive).
-  const allDaySpan = formData.allDay && formData.start && formData.end
-    ? dayEventSpan({ ...(formData as CalendarEvent), allDay: true })
-    : null;
-
-  const handleAllDayToggle = () => {
-    if (!formData.start || !formData.end) return;
-    if (!formData.allDay) {
-      const firstDay = startOfDay(formData.start);
-      const lastDay = startOfDay(new Date(Math.max(formData.end.getTime() - 1, formData.start.getTime())));
-      setFormData(prev => ({ ...prev, allDay: true, start: firstDay, end: addDays(lastDay, 1) }));
-    } else {
-      const start = new Date(formData.start);
-      start.setHours(9, 0, 0, 0);
-      setFormData(prev => ({ ...prev, allDay: false, start, end: new Date(start.getTime() + 60 * 60 * 1000) }));
-    }
-  };
-
-  const handleAllDayDateChange = (field: 'start' | 'end', value: string) => {
-    const [y, m, d] = value.split('-').map(Number);
-    if (!y || !m || !d || !allDaySpan) return;
-    const day = new Date(y, m - 1, d);
-    if (field === 'start') {
-      // Keep the number of days when moving the start.
-      const days = differenceInCalendarDays(allDaySpan.lastDay, allDaySpan.firstDay);
-      setFormData(prev => ({ ...prev, start: day, end: addDays(day, days + 1) }));
-    } else {
-      const firstDay = day < allDaySpan.firstDay ? day : allDaySpan.firstDay;
-      setFormData(prev => ({ ...prev, start: firstDay, end: addDays(day, 1) }));
-    }
-  };
-
   const handleDateChange = (field: 'start' | 'end', value: string) => {
     if (formData.allDay) {
-      handleAllDayDateChange(field, value);
       return;
     }
     const date = new Date(value);
@@ -361,22 +277,29 @@ export const EventModal: React.FC<EventModalProps> = ({
     }));
   };
 
-  const getDurationText = () => {
-    if (!formData.start || !formData.end) return '';
-    if (allDaySpan) {
-      const days = differenceInCalendarDays(allDaySpan.lastDay, allDaySpan.firstDay) + 1;
-      return days === 1 ? t.durationDay : interpolate(t.durationDays, { n: days });
+  const handleRepeatToggle = () => {
+    if (formData.recurrence) {
+      setFormData(prev => ({ ...prev, recurrence: undefined }));
+    } else {
+      setFormData(prev => ({ ...prev, recurrence: {
+          freq: 'WEEKLY',
+          interval: 1,
+          byweekday: [formData.start!.getDay()],
+        }}));
     }
-    const mins = differenceInMinutes(formData.end, formData.start);
-    if (mins < 60) return interpolate(t.durationMinutes, { n: mins });
-    const hours = Math.floor(mins / 60);
-    const remainingMins = mins % 60;
-    if (remainingMins === 0) return interpolate(t.durationHours, { n: hours });
-    return interpolate(t.durationHoursMinutes, { h: hours, m: remainingMins });
-  };
+  }
+
+  const handleZoneToggle = (zone: string) => {
+    setFormData(prev => {
+      const previousZones = prev.zones || [];
+      const zones = previousZones.includes(zone)
+        ? previousZones.filter(z => z !== zone)
+        : [...previousZones, zone];
+      return { ...prev, zones };
+    });
+  }
 
   const calendarColor = formData.color || calendars?.find((c) => c.id === formData.calendarId)?.color;
-  const duration = getDurationText();
 
   // ========== EDIT/CREATE MODE ==========
   const renderEditMode = () => (
@@ -439,136 +362,59 @@ export const EventModal: React.FC<EventModalProps> = ({
         <Field icon={Clock} label={t.whenLabel} labelId={`${id}-when`}>
           <div role="group" aria-labelledby={`${id}-when`} className="ck:flex ck:flex-col ck:gap-2.5">
             <div className="ck:flex ck:flex-wrap ck:items-center ck:gap-2">
-              <label htmlFor={`${id}-start`} className="ck:sr-only">{t.start}</label>
-              <input
-                id={`${id}-start`}
-                type={allDaySpan ? "date" : "datetime-local"}
-                className={cx(INPUT, "ck:tabular-nums")}
-                value={allDaySpan ? format(allDaySpan.firstDay, 'yyyy-MM-dd') : formatDateForInput(formData.start)}
-                onChange={e => handleDateChange('start', e.target.value)}
-              />
-              <span className="ck:text-muted-foreground" aria-hidden="true">–</span>
               <label htmlFor={`${id}-end`} className="ck:sr-only">{t.end}</label>
               <input
                 id={`${id}-end`}
-                type={allDaySpan ? "date" : "datetime-local"}
+                type="datetime-local"
                 className={cx(INPUT, "ck:tabular-nums")}
-                value={allDaySpan ? format(allDaySpan.lastDay, 'yyyy-MM-dd') : formatDateForInput(formData.end)}
-                onChange={e => handleDateChange('end', e.target.value)}
+                value={formatDateForInput(formData.end)}
+                onChange={e => {
+                  handleDateChange('end', e.target.value)
+                  handleDateChange('start', e.target.value)
+                }}
               />
-              {duration && <span className="ck:text-xs ck:font-semibold ck:text-muted-foreground ck:tabular-nums">{duration}</span>}
             </div>
             <div className="ck:flex ck:flex-wrap ck:items-center ck:gap-3">
               <button
                 type="button"
                 role="switch"
-                aria-checked={!!formData.allDay}
-                onClick={handleAllDayToggle}
+                aria-checked={!!formData.recurrence}
+                onClick={handleRepeatToggle}
                 className="ck:inline-flex ck:items-center ck:gap-2.5 ck:min-h-10 ck:text-sm ck:font-medium ck:text-foreground"
               >
-                <span aria-hidden="true" className={cx("ck:relative ck:inline-flex ck:h-[22px] ck:w-9 ck:shrink-0 ck:rounded-full ck:transition-colors", formData.allDay ? "ck:bg-primary" : "ck:bg-muted-foreground/30")}>
-                  <span className={cx("ck:absolute ck:top-[3px] ck:left-[3px] ck:h-4 ck:w-4 ck:rounded-full ck:bg-background ck:shadow-sm ck:transition-transform", formData.allDay && "ck:translate-x-[14px]")} />
+                <span aria-hidden="true" className={cx("ck:relative ck:inline-flex ck:h-[22px] ck:w-9 ck:shrink-0 ck:rounded-full ck:transition-colors", formData.recurrence ? "ck:bg-primary" : "ck:bg-muted-foreground/30")}>
+                  <span className={cx("ck:absolute ck:top-[3px] ck:left-[3px] ck:h-4 ck:w-4 ck:rounded-full ck:bg-background ck:shadow-sm ck:transition-transform", formData.recurrence && "ck:translate-x-[14px]")} />
                 </span>
-                {t.allDay}
+                {t.repeat}
               </button>
-              <select
-                className={cx(INPUT, "ck:min-w-0")}
-                aria-label={t.repeat}
-                value={formData.recurrence?.freq || ''}
-                onChange={e => setFormData({
-                  ...formData,
-                  recurrence: e.target.value === '' ? undefined : { freq: e.target.value as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY', interval: 1 },
-                })}
-              >
-                <option value="">{t.doesNotRepeat}</option>
-                <option value="DAILY">{t.daily}</option>
-                <option value="WEEKLY">{t.weekly}</option>
-                <option value="MONTHLY">{t.monthly}</option>
-                <option value="YEARLY">{t.yearly}</option>
-              </select>
             </div>
           </div>
-        </Field>
-
-        {calendars && calendars.length > 0 && (
-          <Field icon={Calendar} label={t.calendar} htmlFor={`${id}-calendar`}>
-            <div className="ck:relative ck:inline-flex ck:max-w-full">
-              <span className="ck-dot ck:pointer-events-none ck:absolute ck:left-3 ck:top-1/2 ck:-translate-y-1/2 ck:w-2.5 ck:h-2.5 ck:rounded-[3px]" style={eventColorStyle(calendars.find(c => c.id === formData.calendarId)?.color)} aria-hidden="true" />
-              <select
-                id={`${id}-calendar`}
-                className={cx(INPUT, "ck:pl-8 ck:min-w-48")}
-                value={formData.calendarId ?? ''}
-                onChange={e => setFormData({ ...formData, calendarId: e.target.value || undefined })}
-              >
-                {formData.calendarId === undefined && <option value="">{t.select}</option>}
-                {/* A calendar the host no longer lists is kept, shown as itself (never silently replaced). */}
-                {formData.calendarId !== undefined && !calendars.some(c => c.id === formData.calendarId) && <option value={formData.calendarId}>{formData.calendarId}</option>}
-                {calendars.map(cal => <option key={cal.id} value={cal.id}>{cal.label}</option>)}
-              </select>
+          {formData.recurrence && (
+            <div className="ck:flex ck:flex-wrap ck:items-center ck:gap-3">
+              {['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'].map((day, index) => {
+                const isSelected = formData.recurrence?.byweekday?.includes(index);
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => {
+                      setFormData(prev => {
+                        const byweekday = prev.recurrence?.byweekday || [];
+                        if (isSelected) {
+                          return { ...prev, recurrence: { ...prev.recurrence, byweekday: byweekday.filter(d => d !== index) } };
+                        } else {
+                          return { ...prev, recurrence: { ...prev.recurrence, byweekday: [...byweekday, index] } };
+                        }
+                      });
+                    }}
+                    className={cx("ck:w-6 ck:h-6 ck:flex ck:items-center ck:justify-center ck:rounded-sm ck:text-sm ck:font-medium", isSelected ? "ck:bg-primary ck:text-background" : "ck:bg-muted ck:text-foreground")}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
             </div>
-          </Field>
-        )}
-
-        <Field icon={MapPin} label={t.locationLabel} htmlFor={`${id}-location`}>
-          <PlaceField
-            id={`${id}-location`}
-            value={formData.location || ''}
-            place={formData.place}
-            search={placeSearch}
-            className={INPUT}
-            translations={t}
-            onChange={(location, place) => setFormData(prev => ({ ...prev, location, place }))}
-          />
-        </Field>
-
-        {/* Guests: U2, free email input instead of a fake suggestion list */}
-        <Field icon={Users} label={t.guests} htmlFor={`${id}-guest`}>
-          <div className="ck:flex ck:flex-wrap ck:items-center ck:gap-1.5">
-            {guests.map(email => (
-              <span key={email} className={cx(CHIP, "ck:pl-1 ck:pr-1")}>
-                <span
-                  className="ck:flex ck:w-6 ck:h-6 ck:items-center ck:justify-center ck:rounded-full ck:text-[11px] ck:font-semibold ck:text-white"
-                  style={{ backgroundColor: `hsl(${avatarHue(email)}, 55%, 42%)` }}
-                  aria-hidden="true"
-                >
-                  {email[0].toUpperCase()}
-                </span>
-                {email}
-                <button
-                  type="button"
-                  data-ck-small
-                  onClick={() => removeGuest(email)}
-                  className="ck:flex ck:w-6 ck:h-6 ck:items-center ck:justify-center ck:rounded-full ck:text-muted-foreground ck:hover:bg-background ck:hover:text-foreground"
-                  aria-label={interpolate(t.removeGuest, { email })}
-                >
-                  <X className="ck:w-3 ck:h-3" aria-hidden="true" />
-                </button>
-              </span>
-            ))}
-            <input
-              id={`${id}-guest`}
-              // Plain text: browser email validation would block saving a pasted list before our own check.
-              type="text"
-              inputMode="email"
-              autoComplete="email"
-              value={guestInput}
-              onChange={e => {
-                setGuestInput(e.target.value);
-                setGuestError(false);
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ',') {
-                  e.preventDefault();
-                  addGuests(guestInput);
-                }
-              }}
-              onBlur={() => guestInput.trim() && addGuests(guestInput)}
-              placeholder={t.addGuestPlaceholder}
-              aria-invalid={guestError}
-              className={cx(INPUT, "ck:flex-1 ck:min-w-48", guestError && "ck:border-destructive")}
-            />
-          </div>
-          {guestError && <p role="alert" className="ck:mt-1.5 ck:text-xs ck:text-destructive">{t.invalidEmail}</p>}
+          )}
         </Field>
 
         <Field icon={Bell} label={t.reminders} labelId={`${id}-reminders`}>
@@ -619,15 +465,22 @@ export const EventModal: React.FC<EventModalProps> = ({
           </div>
         </Field>
 
-        <Field icon={AlignLeft} label={t.description} htmlFor={`${id}-description`}>
-          <textarea
-            id={`${id}-description`}
-            rows={3}
-            className={cx(INPUT, "ck:w-full ck:py-2.5 ck:resize-y")}
-            placeholder={t.addNotes}
-            value={formData.description || ''}
-            onChange={e => setFormData({ ...formData, description: e.target.value })}
-          />
+        <Field icon={Users} label="Zones" labelId={`${id}-zones`}>
+          <div role="group" aria-labelledby={`${id}-zones`} className="ck:flex ck:flex-wrap ck:items-center ck:gap-1.5">
+            {['Piper', 'Noah', 'Bedroom'].map(zone => {
+              const isSelected = !!formData.zones?.includes(zone);
+              return (
+                <button
+                  key={zone}
+                  type="button"
+                  onClick={() => handleZoneToggle(zone)}
+                  className={cx("ck:w-20 ck:h-8 ck:flex ck:items-center ck:justify-center ck:rounded-full ck:text-sm ck:font-medium", isSelected ? "ck:bg-primary ck:text-background" : "ck:bg-muted ck:text-foreground")}
+                >
+                  {zone}
+                </button>
+              );
+            })}
+          </div>
         </Field>
       </div>
 
