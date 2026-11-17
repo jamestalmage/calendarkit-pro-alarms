@@ -142,10 +142,14 @@ export const MonthView: React.FC<MonthViewProps> = ({
                 const count = onDay.length ? `, ${interpolate((onDay.length === 1 ? translations?.eventCount : translations?.eventsCount) || '{n} events', { n: onDay.length })}` : '';
                 return (
                   <DroppableCell key={day.toISOString()} id={day.toISOString()} date={day} className={cx("ck:h-full ck:border-b-[0.5px] ck:border-r-[0.5px] ck:border-border/30 ck:last:border-r-0", !isSameMonth(day, currentDate) && "ck:text-muted-foreground/60")}>
-                    <button type="button" aria-label={`${format(day, 'EEEE d MMMM yyyy', { locale })}${count}`} onClick={() => onDateClick?.(day)} className="ck:flex ck:h-full ck:min-h-10 ck:w-full ck:flex-col ck:items-center ck:gap-1 ck:pt-1.5">
+                    <button type="button" aria-label={`${format(day, 'EEEE d MMMM yyyy', { locale })}${count}`} className="ck:flex ck:h-full ck:min-h-10 ck:w-full ck:flex-col ck:items-center ck:gap-1 ck:pt-1.5">
                       <span className={cx("ck:flex ck:h-7 ck:w-7 ck:items-center ck:justify-center ck:text-sm ck:font-semibold ck:tabular-nums", isSameDay(day, today) && TODAY_MARK)}>{format(day, 'd', { locale })}</span>
-                      <span className="ck:flex ck:flex-wrap ck:justify-center ck:gap-0.5 ck:px-1" aria-hidden="true">
-                        {onDay.slice(0, 4).map((e) => <i key={e.id} data-ck-dot className="ck-dot ck:h-1.5 ck:w-1.5 ck:rounded-full" style={eventColorStyle(resolveEventColor(e, calendars))} />)}
+                      <span className="ck:flex ck:flex-col ck:justify-start ck:gap-0.5 ck:px-1" aria-hidden="true">
+                        {onDay.slice(0, 4).map((e) =>
+                          <span key={e.id} className="ck:flex ck:flex-wrap ck:justify-start ck:gap-1.5" onClick={() => onEventClick?.(e)}>
+                          <i key={e.id} data-ck-dot className="ck-dot ck:h-1.5 ck:w-1.5 ck:rounded-full" style={eventColorStyle(resolveEventColor(e, calendars))} />
+                          <strong className="ck:text-xs">{format(e.start, 'H:mm')}</strong>
+                        </span>)}
                       </span>
                     </button>
                   </DroppableCell>
