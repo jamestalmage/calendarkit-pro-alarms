@@ -10,6 +10,7 @@ import { cx } from '../utils';
 import { DiscardPrompt } from './DiscardPrompt';
 import { interpolate } from '../core/format';
 import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect';
+import { useDeletionMenu } from './useDeletionMenu';
 
 interface EventModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ interface EventModalProps {
   initialDate?: Date;
   onSave: (event: Partial<CalendarEvent>) => void;
   onDelete?: (eventId: string) => void;
+  onDeleteSeries?: (eventId: string) => void;
   calendars?: { id: string; label: string; color?: string }[];
   eventTypes?: EventType[];
   translations: CalendarTranslations;
@@ -90,6 +92,7 @@ export const EventModal: React.FC<EventModalProps> = ({
   initialDate,
   onSave,
   onDelete,
+  onDeleteSeries,
   calendars,
   translations: t,
   initialAllDay,
@@ -175,6 +178,7 @@ export const EventModal: React.FC<EventModalProps> = ({
 
   const dirty = isOpen && JSON.stringify(formData) !== openedAs.current;
   const requestClose = () => {
+    deletion.onCancel();
     if (dirty) setConfirmingDiscard(true);
     else onClose();
   };
@@ -221,12 +225,21 @@ export const EventModal: React.FC<EventModalProps> = ({
     onClose();
   };
 
-  const handleDelete = () => {
+  const handleDeleted = () => {
     if (event?.id && onDelete) {
       onDelete(event.id);
       onClose();
     }
   };
+
+  const handleDeletedSeries = onDeleteSeries ? () => {
+    if (event?.id && onDeleteSeries) {
+      onDeleteSeries(event.id);
+      onClose();
+    }
+  } : undefined;
+
+  const deletion = useDeletionMenu({ event, onDelete: handleDeleted, onDeleteSeries: handleDeletedSeries });
 
   const formatDateForInput = (date: Date | undefined) => {
     if (!date) return '';
@@ -489,10 +502,27 @@ export const EventModal: React.FC<EventModalProps> = ({
           <DiscardPrompt translations={t} onKeep={() => setConfirmingDiscard(false)} onDiscard={onClose} />
         ) : (
           <>
-            {mode === 'edit' && (
+            {mode === 'edit' && deletion.inMenu ? (<>
               <button
                 type="button"
-                onClick={handleDelete}
+                onClick={deletion.onDelete}
+                className="ck:inline-flex ck:items-center ck:gap-1.5 ck:min-h-10 ck:rounded-lg ck:px-3 ck:text-sm ck:font-semibold ck:text-destructive ck:hover:bg-destructive/10"
+              >
+                <Trash2 className="ck:w-4 ck:h-4" aria-hidden="true" />
+                {t.deleteOccurrence}
+              </button>
+              <button
+                type="button"
+                onClick={deletion.onDeleteSeries}
+                className="ck:inline-flex ck:items-center ck:gap-1.5 ck:min-h-10 ck:rounded-lg ck:px-3 ck:text-sm ck:font-semibold ck:text-destructive ck:hover:bg-destructive/10"
+              >
+                <Trash2 className="ck:w-4 ck:h-4" aria-hidden="true" />
+                {t.deleteSeries}
+              </button>
+            </>) : (
+              <button
+                type="button"
+                onClick={deletion.onDeleteOrMenu}
                 className="ck:inline-flex ck:items-center ck:gap-1.5 ck:min-h-10 ck:rounded-lg ck:px-3 ck:text-sm ck:font-semibold ck:text-destructive ck:hover:bg-destructive/10"
               >
                 <Trash2 className="ck:w-4 ck:h-4" aria-hidden="true" />
@@ -507,12 +537,12 @@ export const EventModal: React.FC<EventModalProps> = ({
             >
               {t.cancel}
             </button>
-            <button
+            {!deletion.inMenu && (<button
               type="submit"
               className="ck:min-h-10 ck:rounded-lg ck:bg-primary ck:px-5 ck:text-sm ck:font-semibold ck:text-primary-foreground ck:hover:bg-primary/90"
             >
               {mode === 'edit' ? t.saveChanges : t.createEvent}
-            </button>
+            </button>)}
           </>
         )}
       </div>

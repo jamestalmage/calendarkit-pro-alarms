@@ -296,6 +296,14 @@ export const Scheduler: React.FC<CalendarProps> = ({
     handleAllDaySlotClick: (day: Date) => calendar.openSlot(day, { allDay: true, editor: hasCustomForm }),
     handleModalSave: (data: Partial<CalendarEvent>) => calendar.saveEvent(data, { eventId: lastOpened.current.id ?? null }),
     handleModalDelete: (eventId: string) => calendar.remove(eventId),
+    handleModalDeleteSeries: onOccurrenceDelete ? (eventId: string) => {
+      const occurence = expandedEvents.find(event => event.id === eventId);
+      if (occurence?.originalEventId) {
+        calendar.remove(occurence.originalEventId);
+      } else {
+        calendar.remove(eventId);
+      }
+    } : undefined,
     handleModalClose: () => calendar.closeDialog(),
     handleEventDelete: (event: CalendarEvent) => calendar.remove(event.id),
     handleEventDuplicate: (event: CalendarEvent) => calendar.duplicate(event.id),
@@ -306,7 +314,7 @@ export const Scheduler: React.FC<CalendarProps> = ({
   const {
     handleViewChange, handleDateChange, handlePrev, handleNext, handleToday, handleDateClick, handleTimeSlotClick,
     handleTimeRangeSelect, handleAllDaySlotClick, handleModalSave, handleModalDelete, handleModalClose, handleEventDelete,
-    handleEventDuplicate, handleEventResize, handleDayEventResize, handleMoreClick,
+    handleEventDuplicate, handleEventResize, handleDayEventResize, handleMoreClick, handleModalDeleteSeries
   } = handlers;
   // 1.x: a click calls onEventClick, then opens the event unless readOnly.
   // Classic opens the event card; Focus and Flow edit at once, in a panel or a sheet (a host's form opens either way).
@@ -475,6 +483,7 @@ export const Scheduler: React.FC<CalendarProps> = ({
       initialDate={modalInitialDate}
       onSave={handleEditorSave}
       onDelete={handleModalDelete}
+      onDeleteSeries={handleModalDeleteSeries}
       calendars={calendars}
       eventTypes={eventTypes}
       translations={t}
@@ -748,6 +757,14 @@ export const Scheduler: React.FC<CalendarProps> = ({
                 onEdit={() => calendar.openEditor(editingId)}
                 onDuplicate={() => calendar.duplicate(editingId)}
                 onDelete={() => calendar.remove(editingId)}
+                onDeleteSeries={onOccurrenceDelete ? () => {
+                  const occurrence = expandedEvents.find(event => event.id === editingId);
+                  if (occurrence?.originalEventId) {
+                    calendar.remove(occurrence.originalEventId);
+                  } else {
+                    calendar.remove(editingId);
+                  }
+                } : undefined }
                 onClose={handleModalClose}
                 docked={compact}
             />

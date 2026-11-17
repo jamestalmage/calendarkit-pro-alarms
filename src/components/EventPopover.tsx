@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState, useCallback } from 'react';
 import { addDays, differenceInMinutes, format, isSameDay, Locale } from 'date-fns';
 import { CalendarEvent, CalendarTranslations } from '../types';
 import { timeFormats } from '../core/format';
@@ -13,6 +13,7 @@ import { durationLabel } from './duration';
 import { Box, placeBeside } from './placement';
 import { useDialogFocus } from './useDialogFocus';
 import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect';
+import { useDeletionMenu } from './useDeletionMenu';
 
 const WIDTH = 340;
 const MARGIN = 8;
@@ -27,6 +28,7 @@ interface EventPopoverProps {
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onDeleteSeries?: () => void;
   onClose: () => void;
   /** Phone layout (spec §8.9): a bottom sheet over the calendar instead of a card beside the event. */
   docked?: boolean;
@@ -59,7 +61,7 @@ const Row: React.FC<{ icon: React.ComponentType<React.SVGProps<SVGSVGElement>>; 
 );
 
 /** Spec §8.1 (Classic): an event's details beside it, with Edit / Duplicate / Delete. */
-export const EventPopover: React.FC<EventPopoverProps> = ({ event, anchor, timezone, locale, translations: t, onEdit, onDuplicate, onDelete, onClose, docked }) => {
+export const EventPopover: React.FC<EventPopoverProps> = ({ event, anchor, timezone, locale, translations: t, onEdit, onDuplicate, onDelete, onDeleteSeries, onClose, docked }) => {
   const calendars = useCalendars();
   const classNames = useClassNames();
   const titleId = useId();
@@ -67,6 +69,8 @@ export const EventPopover: React.FC<EventPopoverProps> = ({ event, anchor, timez
   const [height, setHeight] = useState(0);
   const calendar = calendars?.find((c) => c.id === event.calendarId);
   const [day, times] = when(event, timezone, locale, t);
+
+  const deletion = useDeletionMenu({ event, onDelete, onDeleteSeries });
 
   useEffect(() => {
     ref.current?.focus();
@@ -160,15 +164,31 @@ export const EventPopover: React.FC<EventPopoverProps> = ({ event, anchor, timez
           )}
         </div>
         <div className="ck:mt-3 ck:pt-3 ck:border-t ck:border-border ck:flex ck:flex-wrap ck:items-center ck:gap-1.5">
-          <button type="button" onClick={onEdit} className={cx(action, "ck:bg-muted ck:text-foreground ck:hover:bg-accent")}>
-            <Edit2 className="ck:w-4 ck:h-4" aria-hidden="true" />{t.edit}
-          </button>
-          <button type="button" onClick={onDuplicate} className={cx(action, "ck:bg-muted ck:text-foreground ck:hover:bg-accent")}>
-            <Copy className="ck:w-4 ck:h-4" aria-hidden="true" />{t.duplicate}
-          </button>
-          <button type="button" onClick={onDelete} className={cx(action, "ck:ml-auto ck:text-destructive ck:hover:bg-destructive/10")}>
-            <Trash2 className="ck:w-4 ck:h-4" aria-hidden="true" />{t.delete}
-          </button>
+          {
+            deletion.inMenu
+              ? (<>
+                <button type="button" onClick={deletion.onCancel} className={cx(action, "ck:bg-muted ck:text-foreground ck:hover:bg-accent")}>
+                  <X className="ck:w-4 ck:h-4" aria-hidden="true" />{t.cancel}
+                </button>
+                <button type="button" onClick={deletion.onDeleteSeries} className={cx(action, "ck:ml-auto ck:text-destructive ck:hover:bg-destructive/10")}>
+                  <Trash2 className="ck:w-4 ck:h-4" aria-hidden="true" />{t.deleteSeries}
+                </button>
+                <button type="button" onClick={deletion.onDelete} className={cx(action, "ck:ml-auto ck:text-destructive ck:hover:bg-destructive/10")}>
+                  <Trash2 className="ck:w-4 ck:h-4" aria-hidden="true" />{t.deleteOccurrence}
+                </button>
+              </>)
+              : (<>
+                <button type="button" onClick={onEdit} className={cx(action, "ck:bg-muted ck:text-foreground ck:hover:bg-accent")}>
+                  <Edit2 className="ck:w-4 ck:h-4" aria-hidden="true" />{t.edit}
+                </button>
+                <button type="button" onClick={onDuplicate} className={cx(action, "ck:bg-muted ck:text-foreground ck:hover:bg-accent")}>
+                  <Copy className="ck:w-4 ck:h-4" aria-hidden="true" />{t.duplicate}
+                </button>
+                <button type="button" onClick={deletion.onDeleteOrMenu} className={cx(action, "ck:ml-auto ck:text-destructive ck:hover:bg-destructive/10")}>
+                  <Trash2 className="ck:w-4 ck:h-4" aria-hidden="true" />{t.delete}
+                </button>
+              </>)
+          }
         </div>
       </div>
     </>
