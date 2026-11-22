@@ -64,6 +64,7 @@ export interface Draft {
   /** Words recognised in the title, for display. */
   tokens: ParsedToken[]
   dirty: boolean
+  zones?: string[]
 }
 
 export type Dialog =
@@ -304,7 +305,7 @@ export function createCalendar(initial: CalendarOptions = {}): CalendarStore {
     openSlot(start, { end, allDay = false, resourceId, editor = false } = {}) {
       if (options.readOnly) return
       const from = allDay ? startOfDay(start) : start
-      const to = end ?? (allDay ? addDays(from, 1) : new Date(from.getTime() + HOUR))
+      const to = end ?? (allDay ? addDays(from, 1) : from)
       const draft = makeDraft(from, to, { allDay, resourceId })
       dialog = editor ? { kind: 'editor', draft } : { kind: 'quick', draft }
       emit()
@@ -312,7 +313,7 @@ export function createCalendar(initial: CalendarOptions = {}): CalendarStore {
     openEditor(eventId) {
       if (options.readOnly) return
       if (eventId === undefined) {
-        const draft = dialog && dialog.kind === 'quick' ? dialog.draft : makeDraft(wallNow(), new Date(wallNow().getTime() + HOUR))
+        const draft = dialog && dialog.kind === 'quick' ? dialog.draft : makeDraft(wallNow(), wallNow())
         dialog = { kind: 'editor', draft }
       } else {
         const event = find(eventId)

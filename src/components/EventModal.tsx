@@ -38,7 +38,7 @@ interface EventModalProps {
 }
 
 // Predefined reminder offsets, in minutes before the event
-const REMINDER_OPTIONS = [0, 5, 10, 15, 30, 60, 120, 1440, 2880, 10080];
+const REMINDER_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 60, 120, 1440, 2880, 10080];
 
 // Color palette for events
 // Each colour with the key of its name (swatches are named by colour, not by hex code).
@@ -246,27 +246,13 @@ export const EventModal: React.FC<EventModalProps> = ({
     return format(date, "yyyy-MM-dd'T'HH:mm");
   };
 
-  const handleDateChange = (field: 'start' | 'end', value: string) => {
+  const handleDateChange = (value: string) => {
     if (formData.allDay) {
       return;
     }
     const date = new Date(value);
     if (isNaN(date.getTime())) return;
-
-    if (field === 'start') {
-        const duration = formData.end!.getTime() - formData.start!.getTime();
-        setFormData(prev => ({
-            ...prev,
-            start: date,
-            end: new Date(date.getTime() + duration)
-        }));
-    } else {
-        if (date < formData.start!) {
-             setFormData(prev => ({ ...prev, start: date, end: date }));
-        } else {
-             setFormData(prev => ({ ...prev, end: date }));
-        }
-    }
+    setFormData(prev => ({    ...prev, start: date, end: date }));
   };
 
   const addReminder = (minutes: number) => {
@@ -382,8 +368,7 @@ export const EventModal: React.FC<EventModalProps> = ({
                 className={cx(INPUT, "ck:tabular-nums")}
                 value={formatDateForInput(formData.end)}
                 onChange={e => {
-                  handleDateChange('end', e.target.value)
-                  handleDateChange('start', e.target.value)
+                  handleDateChange(e.target.value)
                 }}
               />
             </div>
@@ -480,7 +465,7 @@ export const EventModal: React.FC<EventModalProps> = ({
 
         <Field icon={Users} label="Zones" labelId={`${id}-zones`}>
           <div role="group" aria-labelledby={`${id}-zones`} className="ck:flex ck:flex-wrap ck:items-center ck:gap-1.5">
-            {['Piper', 'Noah', 'Bedroom'].map(zone => {
+            {['Bedroom', 'Kitchen', 'Noah', 'Piper', 'Outside', 'Playroom'].map(zone => {
               const isSelected = !!formData.zones?.includes(zone);
               return (
                 <button

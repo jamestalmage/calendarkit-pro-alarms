@@ -153,6 +153,7 @@ export interface EventEditorProps {
   initialAllDay?: boolean;
   onSave: (event: Partial<CalendarEvent>) => void;
   onDelete?: (eventId: string) => void;
+  onDeleteSeries?: (eventId: string) => void;
 }
 
 /** Props of `components.Toolbar`. */

@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, {useCallback, useEffect, useId, useRef, useState} from 'react';
 import { addDays, format, Locale } from 'date-fns';
 import { CalendarEvent, CalendarProps, CalendarTranslations, Place, PlaceSearch } from '../types';
 import { cx } from '../utils';
@@ -15,7 +15,7 @@ import { PlaceField } from './PlaceField';
 import { EMAIL } from './EventModal';
 import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect';
 
-type DraftPatch = Partial<Pick<Draft, 'title' | 'start' | 'end' | 'calendarId'>>;
+type DraftPatch = Partial<Pick<Draft, 'title' | 'start' | 'end' | 'calendarId' | 'zones'>>;
 
 /** What the quick card adds to the draft: saved with it, or carried to "More options". */
 export type QuickExtra = Partial<Pick<CalendarEvent, 'guests' | 'location' | 'place' | 'description'>>;
@@ -76,13 +76,17 @@ export const QuickCreate: React.FC<QuickCreateProps> = ({ draft, events, calenda
   // Beside the ghost where the card opened (it stays there while a sentence moves the event);
   // centred near the top without a ghost (all day).
   const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
-  const [shown, setShown] = useState<{ guests?: boolean; location?: boolean; description?: boolean }>({});
-  const [guests, setGuests] = useState('');
-  const [guestError, setGuestError] = useState(false);
-  const [where, setWhere] = useState<{ location: string; place?: Place }>({ location: '' });
-  const [description, setDescription] = useState('');
-  const dirty = draft.dirty || !!guests.trim() || !!where.location || !!description.trim();
+  const dirty = draft.dirty;
   const dismiss = () => (dirty ? setConfirming(true) : onClose());
+
+  const handleZoneToggle = useCallback((zone: string) => {
+    const zones = draft.zones ?? [];
+    if (zones.includes(zone)) {
+      onChange({ zones: zones.filter(z => z !== zone) });
+    } else {
+      onChange({ zones: [...zones, zone] });
+    }
+  }, [draft.zones, onChange]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -106,30 +110,10 @@ export const QuickCreate: React.FC<QuickCreateProps> = ({ draft, events, calenda
     setPlace(el && ghost && layer && ghost.width > 0 ? placeBeside(ghost, { width: el.offsetWidth, height: el.offsetHeight }, layer) : null);
   }, []);
 
-  /** The added fields, or `undefined` when a guest is not a valid email (said under the field). */
-  const extra = (): QuickExtra | undefined => {
-    const entries = guests.split(/[\s,;]+/).filter(Boolean);
-    if (entries.some((entry) => !EMAIL.test(entry))) {
-      setGuestError(true);
-      return undefined;
-    }
-    return {
-      ...(entries.length ? { guests: [...new Set(entries)] } : {}),
-      ...(where.location ? { location: where.location, ...(where.place ? { place: where.place } : {}) } : {}),
-      ...(description.trim() ? { description: description.trim() } : {}),
-    };
-  };
-  const save = () => {
-    const fields = extra();
-    if (fields) onSave(fields);
-  };
-
   const formats = timeFormats(locale);
-  const minutes = draft.end.getTime() - draft.start.getTime();
   const zone = timezone && new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'short' }).formatToParts(draft.start).find((p) => p.type === 'timeZoneName')?.value;
   const repeat = draft.recurrence ? { DAILY: t.daily, WEEKLY: t.weekly, MONTHLY: t.monthly, YEARLY: t.yearly }[draft.recurrence.freq] : t.doesNotRepeat;
   const overlap = draft.allDay ? undefined : events.find((event) => !event.allDay && toDisplay(event.start, timezone) < draft.end && toDisplay(event.end, timezone) > draft.start);
-  const calendarColor = calendars?.find((c) => c.id === draft.calendarId)?.color;
   const timeText = "ck:relative ck:rounded-md ck:px-1 ck:-mx-1 ck:hover:bg-muted ck:focus-within:bg-muted ck:focus-within:outline-2 ck:focus-within:outline-ring";
 
   return (
@@ -163,7 +147,7 @@ export const QuickCreate: React.FC<QuickCreateProps> = ({ draft, events, calenda
             className="ck:w-full ck:bg-transparent ck:border-b-2 ck:border-border ck:focus:border-ring ck:outline-hidden ck:px-0.5 ck:pb-1.5 ck:font-display ck:text-2xl ck:text-foreground ck:placeholder:text-muted-foreground"
             onChange={(e) => onChange({ title: e.target.value })}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) save();
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) onSave({});
             }}
           />
           {draft.tokens.length > 0 && (
@@ -184,89 +168,49 @@ export const QuickCreate: React.FC<QuickCreateProps> = ({ draft, events, calenda
               {format(draft.start, 'EEEE, d MMMM', { locale })}
               <input type="date" aria-label={t.dateLabel} className={PICK} value={format(draft.start, 'yyyy-MM-dd')} onClick={open}
                 onChange={(e) => {
-                  const start = onDay(draft.start, e.target.value);
-                  onChange({ start, end: new Date(start.getTime() + minutes) });
+                  const date = onDay(draft.end, e.target.value);
+                  onChange({ start: date, end: date});
                 }} />
             </span>
             {' '}
-            {draft.allDay ? <span>{t.allDay}</span> : (
               <span className="ck:inline-flex ck:items-center ck:whitespace-pre">
                 <span className={timeText}>
-                  {format(draft.start, formats.time, { locale })}
-                  <input type="time" step={900} aria-label={t.start} className={PICK} value={format(draft.start, 'HH:mm')} onClick={open}
-                    onChange={(e) => {
-                      const start = atTime(draft.start, e.target.value);
-                      onChange({ start, end: new Date(start.getTime() + minutes) });
-                    }} />
-                </span>
-                <span aria-hidden="true">{' – '}</span>
-                <span className={timeText}>
                   {format(draft.end, formats.time, { locale })}
-                  <input type="time" step={900} aria-label={t.end} className={PICK} value={format(draft.end, 'HH:mm')} onClick={open}
+                  <input type="time" step={300} aria-label={t.end} className={PICK} value={format(draft.end, 'HH:mm')} onClick={open}
                     onChange={(e) => {
-                      const end = atTime(draft.start, e.target.value);
-                      // An end before the start is the next day (an evening running past midnight).
-                      onChange({ end: end > draft.start ? end : addDays(end, 1) });
+                      const end = atTime(draft.end, e.target.value);
+                      onChange({ start: end, end });
                     }} />
                 </span>
               </span>
-            )}
           </p>
           <p className="ck:mt-0.5 ck:text-xs ck:text-muted-foreground">{[zone, repeat].filter(Boolean).join(' · ')}</p>
           {overlap && <p role="status" className="ck:mt-2 ck:rounded-lg ck:bg-warning/10 ck:px-2.5 ck:py-1.5 ck:text-xs ck:font-medium ck:text-warning">{interpolate(t.overlaps, { title: overlap.title })}</p>}
         </Row>
-
-        <Row icon={Users}>
-          {shown.guests ? (
-            <>
-              <input autoFocus aria-label={t.guests} aria-invalid={guestError} inputMode="email" autoComplete="off" className={cx(FIELD, guestError && "ck:border-destructive")} placeholder={t.addGuestPlaceholder} value={guests}
-                onChange={(e) => { setGuests(e.target.value); setGuestError(false); }} />
-              {guestError && <p role="alert" className="ck:mt-1 ck:text-xs ck:text-destructive">{t.invalidEmail}</p>}
-            </>
-          ) : <button type="button" className={ADD} onClick={() => setShown((s) => ({ ...s, guests: true }))}>{t.addGuests}</button>}
+        <Row icon={Users} >
+          <div role="group" aria-labelledby={`${id}-zones`} className="ck:flex ck:flex-wrap ck:items-center ck:gap-1.5">
+            {['Bedroom', 'Kitchen', 'Noah', 'Piper', 'Outside', 'Playroom'].map(zone => {
+              const isSelected = !!draft.zones?.includes(zone);
+              return (
+                <button
+                  key={zone}
+                  type="button"
+                  onClick={() => handleZoneToggle(zone)}
+                  className={cx("ck:w-20 ck:h-8 ck:flex ck:items-center ck:justify-center ck:rounded-full ck:text-sm ck:font-medium", isSelected ? "ck:bg-primary ck:text-background" : "ck:bg-muted ck:text-foreground")}
+                >
+                  {zone}
+                </button>
+              );
+            })}
+          </div>
         </Row>
-
-        <Row icon={MapPin}>
-          {shown.location ? (
-            <>
-              <label htmlFor={`${id}-location`} className="ck:sr-only">{t.locationLabel}</label>
-              <PlaceField id={`${id}-location`} autoFocus value={where.location} place={where.place} search={placeSearch} className={FIELD} translations={t}
-                onChange={(location, chosen) => setWhere({ location, place: chosen })} />
-            </>
-          ) : <button type="button" className={ADD} onClick={() => setShown((s) => ({ ...s, location: true }))}>{t.addLocation}</button>}
-        </Row>
-
-        <Row icon={AlignLeft}>
-          {shown.description ? (
-            <textarea autoFocus aria-label={t.description} rows={2} className={cx(FIELD, "ck:py-2 ck:resize-y")} placeholder={t.addNotes} value={description} onChange={(e) => setDescription(e.target.value)} />
-          ) : <button type="button" className={ADD} onClick={() => setShown((s) => ({ ...s, description: true }))}>{t.addDescription}</button>}
-        </Row>
-
-        {calendars && calendars.length > 0 && (
-          <Row icon={Calendar}>
-            <span className="ck:relative ck:inline-flex">
-              <span className="ck-dot ck:pointer-events-none ck:absolute ck:right-3 ck:top-1/2 ck:-translate-y-1/2 ck:w-2.5 ck:h-2.5 ck:rounded-full" style={eventColorStyle(calendarColor)} aria-hidden="true" />
-              <select
-                aria-label={t.calendar}
-                value={draft.calendarId ?? ''}
-                className="ck:min-h-9 ck:max-w-60 ck:appearance-none ck:rounded-lg ck:bg-transparent ck:-ml-2 ck:pl-2 ck:pr-8 ck:text-sm ck:text-foreground ck:hover:bg-muted ck:focus:outline-2 ck:focus:outline-ring"
-                onChange={(e) => onChange({ calendarId: e.target.value || undefined })}
-              >
-                <option value="">{t.calendar}</option>
-                {calendars.map((calendar) => (
-                  <option key={calendar.id} value={calendar.id}>{calendar.label}</option>
-                ))}
-              </select>
-            </span>
-          </Row>
-        )}
 
         {confirming ? (
           <DiscardPrompt translations={t} onKeep={() => setConfirming(false)} onDiscard={onClose} />
         ) : (
           <div className="ck:flex ck:items-center ck:justify-end ck:gap-2 ck:pt-1">
-            <button type="button" className="ck:min-h-10 ck:rounded-full ck:px-4 ck:text-sm ck:font-semibold ck:text-foreground ck:hover:bg-muted" onClick={() => { const fields = extra(); if (fields) onMoreOptions(fields); }}>{t.moreOptions}</button>
-            <button type="button" className="ck:min-h-10 ck:rounded-full ck:bg-primary ck:px-6 ck:text-sm ck:font-semibold ck:text-primary-foreground ck:hover:bg-primary/90" onClick={save}>{t.save}</button>
+            <button type="button" className="ck:min-h-10 ck:rounded-full ck:px-4 ck:text-sm ck:font-semibold ck:text-foreground ck:hover:bg-muted" onClick={() => { onMoreOptions({}); }}>{t.moreOptions}</button>
+            <button type="button" className="ck:min-h-10 ck:rounded-full ck:bg-primary ck:px-6 ck:text-sm ck:font-semibold ck:text-primary-foreground ck:hover:bg-primary/90" onClick={() => { onSave({}); }}>{t.save}</button>
           </div>
         )}
       </div>

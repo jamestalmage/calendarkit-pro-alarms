@@ -287,7 +287,7 @@ export const Scheduler: React.FC<CalendarProps> = ({
     handleToday: () => calendar.navigate('today'),
     handleDateClick: (date: Date) => {
       calendar.navigate(date);
-      calendar.setView('day');
+      //calendar.setView('day');
     },
     // Quick create, or the custom form of a 1.x host (renderEventForm) as before.
     handleTimeSlotClick: (date: Date, resourceId?: string) => calendar.openSlot(date, { resourceId, editor: hasCustomForm }),
@@ -296,14 +296,14 @@ export const Scheduler: React.FC<CalendarProps> = ({
     handleAllDaySlotClick: (day: Date) => calendar.openSlot(day, { allDay: true, editor: hasCustomForm }),
     handleModalSave: (data: Partial<CalendarEvent>) => calendar.saveEvent(data, { eventId: lastOpened.current.id ?? null }),
     handleModalDelete: (eventId: string) => calendar.remove(eventId),
-    handleModalDeleteSeries: onOccurrenceDelete ? (eventId: string) => {
+    handleModalDeleteSeries: (eventId: string) => {
       const occurence = expandedEvents.find(event => event.id === eventId);
       if (occurence?.originalEventId) {
         calendar.remove(occurence.originalEventId);
       } else {
         calendar.remove(eventId);
       }
-    } : undefined,
+    },
     handleModalClose: () => calendar.closeDialog(),
     handleEventDelete: (event: CalendarEvent) => calendar.remove(event.id),
     handleEventDuplicate: (event: CalendarEvent) => calendar.duplicate(event.id),
@@ -451,13 +451,15 @@ export const Scheduler: React.FC<CalendarProps> = ({
 
   // "Create" works like a click in the grid (spec §8.5): the quick card at the next free hour, today
   // (the week and day views go there first), or the host's form at that time.
-  const handleCreateEvent = useStableCallback(() => {
+  const handleCreateEventRaw = useStableCallback((date?: Date) => {
     // Events drawn in the grid only: a day or longer is a bar above it and does not push the slot.
     const timed = filteredEvents.filter((e) => !e.allDay && e.end.getTime() - e.start.getTime() < 864e5).map((e) => ({ start: toDisplay(e.start, timezone), end: toDisplay(e.end, timezone) }));
-    const start = nextFreeSlot(toDisplay(new Date(), timezone), timed, grid.startHour, grid.endHour);
+    const start = nextFreeSlot(toDisplay(date || new Date(), timezone), timed, grid.startHour, grid.endHour);
     if (view === 'week' || view === 'day' || layout === 'flow') calendar.navigate(start);
     calendar.openSlot(start, { editor: hasCustomForm });
   });
+
+  const handleCreateEvent = useStableCallback(() => handleCreateEventRaw());
 
   const slotClickHandler = readOnly ? undefined : handleTimeSlotClick;
   const rangeSelectHandler = readOnly ? undefined : handleTimeRangeSelect;
@@ -628,7 +630,7 @@ export const Scheduler: React.FC<CalendarProps> = ({
                                 currentDate={currentDate}
                                 events={filteredEvents}
                                 onEventClick={handleEventClickInternal}
-                                onDateClick={handleDateClick}
+                                onDateClick={handleCreateEventRaw}
                                 timezone={timezone}
                                 locale={locale}
                                 translations={t}
@@ -741,7 +743,8 @@ export const Scheduler: React.FC<CalendarProps> = ({
                 initialDate: modalInitialDate,
                 initialAllDay: modalInitialAllDay,
                 onSave: handleModalSave,
-                onDelete: handleModalDelete
+                onDelete: handleModalDelete,
+                onDeleteSeries: handleModalDeleteSeries,
             })
         ) : (
             layout !== 'focus' && builtInEditor
@@ -757,14 +760,14 @@ export const Scheduler: React.FC<CalendarProps> = ({
                 onEdit={() => calendar.openEditor(editingId)}
                 onDuplicate={() => calendar.duplicate(editingId)}
                 onDelete={() => calendar.remove(editingId)}
-                onDeleteSeries={onOccurrenceDelete ? () => {
+                onDeleteSeries={() => {
                   const occurrence = expandedEvents.find(event => event.id === editingId);
                   if (occurrence?.originalEventId) {
                     calendar.remove(occurrence.originalEventId);
                   } else {
                     calendar.remove(editingId);
                   }
-                } : undefined }
+                }}
                 onClose={handleModalClose}
                 docked={compact}
             />

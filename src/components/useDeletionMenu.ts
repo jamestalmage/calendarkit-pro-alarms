@@ -8,7 +8,7 @@ export type SeriesAwareDeletionProps = {
 };
 
 export const useDeletionMenu = ({ event, onDelete: originalOnDelete, onDeleteSeries: originalOnDeleteSeries }: SeriesAwareDeletionProps) => {
-	const hasSeries = !!event?.recurrence && !!originalOnDelete;
+	const hasSeries = !!event?.recurrence && !!originalOnDeleteSeries;
 	const [inMenu, setInMenu] = useState(false);
 
 	const onDelete = useCallback(() => {
@@ -21,6 +21,8 @@ export const useDeletionMenu = ({ event, onDelete: originalOnDelete, onDeleteSer
 		setInMenu(false);
 		if (originalOnDeleteSeries) {
 			originalOnDeleteSeries();
+		} else {
+			onDelete();
 		}
 	}, [originalOnDeleteSeries, setInMenu]);
 
