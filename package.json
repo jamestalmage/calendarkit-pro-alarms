@@ -1,5 +1,5 @@
 {
-  "name": "calendarkit-pro",
+  "name": "@jamestalmage/calendarkit-pro-alarms",
   "version": "2.0.0",
   "description": "A complete, accessible React calendar and scheduler: month, week, day, agenda and resource views, drag and drop, recurring events, time zones. Free and MIT licensed.",
   "main": "dist/index.js",
