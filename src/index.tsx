@@ -68,6 +68,7 @@ export type {
   PlaceSearch,
 } from './types';
 export { photonPlaces } from './places';
+export { reminderText, reminderLabel, REMINDER_OPTIONS, DEFAULT_REMINDER_TEMPLATE } from './reminder-templates';
 
 const NO_CLASSES: CalendarClassNames = {};
 

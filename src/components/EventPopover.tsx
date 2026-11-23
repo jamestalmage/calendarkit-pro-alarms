@@ -5,7 +5,6 @@ import { timeFormats } from '../core/format';
 import { toDisplay } from '../core/timezone';
 import { cx } from '../utils';
 import { AlignLeft, Bell, Calendar, Clock, Copy, Edit2, MapPin, Navigation, Paperclip, Trash2, Users, X } from './icons';
-import { reminderLabel } from './EventModal';
 import { directionsUrl, isSafeUrl, mapsUrl } from './links';
 import { eventColorStyle, resolveEventColor, useCalendars } from './eventColor';
 import { useClassNames } from './customize';
@@ -14,6 +13,7 @@ import { Box, placeBeside } from './placement';
 import { useDialogFocus } from './useDialogFocus';
 import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect';
 import { useDeletionMenu } from './useDeletionMenu';
+import {reminderLabel} from '@/reminder-templates';
 
 const WIDTH = 340;
 const MARGIN = 8;

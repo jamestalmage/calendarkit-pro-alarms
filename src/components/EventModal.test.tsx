@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { resolveTranslations } from '../core/format'
 import type { CalendarEvent } from '../types'
-import { EventModal, reminderLabel } from './EventModal'
+import { EventModal } from './EventModal'
+import {reminderLabel} from '@/reminder-templates';
 
 afterEach(cleanup)
 

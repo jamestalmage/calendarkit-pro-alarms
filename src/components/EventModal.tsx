@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useId, useInsertionEffect, useRef } from 'react';
-import { useClassNames } from './customize';
-import { placeBeside } from './placement';
-import { useDialogFocus } from './useDialogFocus';
-import { CalendarEvent, CalendarTranslations, EventType, EventReminder, PlaceSearch } from '../types';
-import { addDays, format, startOfDay } from 'date-fns';
-import { Bell, Users, Calendar, Clock, Plus, Trash2, X } from './icons';
-import { eventColorStyle } from './eventColor';
-import { cx } from '../utils';
-import { DiscardPrompt } from './DiscardPrompt';
-import { interpolate } from '../core/format';
-import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect';
-import { useDeletionMenu } from './useDeletionMenu';
+import React, {useEffect, useId, useInsertionEffect, useRef, useState} from 'react';
+import {useClassNames} from './customize';
+import {placeBeside} from './placement';
+import {useDialogFocus} from './useDialogFocus';
+import {CalendarEvent, CalendarTranslations, EventReminder, EventType, PlaceSearch} from '../types';
+import {addDays, format, startOfDay, subMinutes} from 'date-fns';
+import {AlignLeft, Bell, Clock, Plus, Trash2, Users, X} from './icons';
+import {eventColorStyle} from './eventColor';
+import {cx} from '../utils';
+import {DiscardPrompt} from './DiscardPrompt';
+import {useIsomorphicLayoutEffect} from '../hooks/useIsomorphicLayoutEffect';
+import {useDeletionMenu} from './useDeletionMenu';
+import {DEFAULT_REMINDER_TEMPLATE, REMINDER_OPTIONS, reminderLabel, reminderText} from '@/reminder-templates';
 
 interface EventModalProps {
   isOpen: boolean;
@@ -37,9 +37,6 @@ interface EventModalProps {
   closeRequest?: number;
 }
 
-// Predefined reminder offsets, in minutes before the event
-const REMINDER_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 60, 120, 1440, 2880, 10080];
-
 // Color palette for events
 // Each colour with the key of its name (swatches are named by colour, not by hex code).
 const COLOR_PALETTE = [
@@ -56,17 +53,6 @@ const COLOR_PALETTE = [
 ] as const;
 
 export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/** Localized reminder label: "30 minutes before", "1 day before"… */
-export const reminderLabel = (minutes: number, t: CalendarTranslations): string => {
-  if (minutes === 0) return t.reminderAtTime;
-  if (minutes === 10080) return t.reminderWeek;
-  if (minutes === 1440) return t.reminderDay;
-  if (minutes % 1440 === 0) return interpolate(t.reminderDays, { n: minutes / 1440 });
-  if (minutes === 60) return t.reminderHour;
-  if (minutes % 60 === 0) return interpolate(t.reminderHours, { n: minutes / 60 });
-  return interpolate(t.reminderMinutes, { n: minutes });
-};
 
 const WIDTH = 440;
 const MARGIN = 8;
@@ -128,6 +114,7 @@ export const EventModal: React.FC<EventModalProps> = ({
 
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const [isReminderDropdownOpen, setIsReminderDropdownOpen] = useState(false);
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(null);
   const id = useId();
   const classNames = useClassNames();
   const card = useRef<HTMLDivElement>(null);
@@ -220,6 +207,7 @@ export const EventModal: React.FC<EventModalProps> = ({
 
     onSave({
       ...formData,
+      reminders: formData.reminders?.map(r => ({ ...r, label: r.label?.trim() === "" ? undefined : r.label })),
       id: event?.id,
     });
     onClose();
@@ -259,8 +247,7 @@ export const EventModal: React.FC<EventModalProps> = ({
     const newReminder: EventReminder = {
       id: Math.random().toString(36).slice(2, 11),
       type: 'notification',
-      time: minutes,
-      label: reminderLabel(minutes, t)
+      time: minutes
     };
     setFormData(prev => ({
       ...prev,
@@ -417,10 +404,38 @@ export const EventModal: React.FC<EventModalProps> = ({
 
         <Field icon={Bell} label={t.reminders} labelId={`${id}-reminders`}>
           <div role="group" aria-labelledby={`${id}-reminders`} className="ck:flex ck:flex-wrap ck:items-center ck:gap-1.5">
-            {formData.reminders?.map(reminder => (
-              <span key={reminder.id} className={cx(CHIP, "ck:pl-3 ck:pr-1")}>
+            {formData.reminders?.sort((a, b) => b.time - a.time).map(reminder => {
+              const template = (reminder.label ?? formData?.description) || DEFAULT_REMINDER_TEMPLATE;
+              if (editingReminderId === reminder.id) {
+                return (
+                  <span key={`reminder-edit-${reminder.id}`} className={cx(CHIP, "ck:pl-3 ck:pr-1")} onClick={() => setEditingReminderId(reminder.id)}>
+                    <span className="ck:font-mono ck:text-shadow-xs">{format(subMinutes(formData.end || event?.end || new Date(), reminder.time), 'h:mm')}</span>
+                    -
+                    {/* From the minutes, in the calendar's language (a stored label may be in another). */}
+                    <input autoFocus type="text" value={template} onChange={(e) => {
+                      setFormData(prev => ({ ...prev, reminders: prev.reminders?.map(r => r.id === reminder.id ? { ...r, label: e.target.value } : r) }));
+                    }} onBlur={() => setEditingReminderId(null)}/>
+                    <button
+                      type="button"
+                      data-ck-small
+                      onClick={() => removeReminder(reminder.id)}
+                      className="ck:flex ck:w-6 ck:h-6 ck:items-center ck:justify-center ck:rounded-full ck:text-muted-foreground ck:hover:bg-background ck:hover:text-foreground"
+                      aria-label={t.removeReminder}
+                    >
+                      <X className="ck:w-3 ck:h-3" aria-hidden="true" />
+                    </button>
+                  </span>
+                );
+              }
+
+              const reminderTextValue = reminderText(template, formData.title || event?.title || '', formData.end || event?.end || new Date(), reminder.time);
+
+              return (<span key={`reminder-pill-${reminder.id}`} className={cx(CHIP, "ck:pl-3 ck:pr-1")} onClick={() => setEditingReminderId(reminder.id)}>
+                <span className="ck:font-mono ck:text-shadow-xs">{format(subMinutes(formData.end || event?.end || new Date(), reminder.time), 'k:mm')}</span>
+                {' - '}
                 {/* From the minutes, in the calendar's language (a stored label may be in another). */}
-                {reminderLabel(reminder.time, t)}
+
+                {reminderTextValue}
                 <button
                   type="button"
                   data-ck-small
@@ -430,8 +445,8 @@ export const EventModal: React.FC<EventModalProps> = ({
                 >
                   <X className="ck:w-3 ck:h-3" aria-hidden="true" />
                 </button>
-              </span>
-            ))}
+              </span>)
+            })}
             <div className="ck:relative">
               <button
                 type="button"
@@ -479,6 +494,17 @@ export const EventModal: React.FC<EventModalProps> = ({
               );
             })}
           </div>
+        </Field>
+        <Field icon={AlignLeft} label="Reminder Template" htmlFor={`${id}-description`}>
+          <textarea
+            id={`${id}-description`}
+            rows={3}
+            className={cx(INPUT, "ck:w-full ck:py-2.5 ck:resize-y")}
+            placeholder={t.addNotes}
+            value={formData.description ?? ''}
+            onChange={e => setFormData({ ...formData, description: e.target.value === "" ? undefined : e.target.value })}
+          />
+          <span className="ck:text-sm">{`Allows template replacement with {title}, {time}, {minutes}, {inMinutes}`}</span>
         </Field>
       </div>
 
